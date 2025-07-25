@@ -1,74 +1,43 @@
-import pandas as pd
+
 from docx import Document
-from adjustments import apply_adjustments
-import json
+from io import BytesIO
 
-with open("market_adjustment_schema.json", "r") as f:
-    ADJUSTMENT_SCHEMA = json.load(f)
+def generate_report(subject, df, online_avg):
+    doc = Document()
+    doc.add_heading("Market Valuation Report – Adjusted Comparison", 0)
 
-def generate_report(df, subject_info, online_estimates):
-    document = Document()
-    document.add_heading("Market Valuation Report – Adjusted Comparison with Breakdown", level=1)
+    doc.add_paragraph(f"Subject Property\nAddress: {subject['Address']}\nAG SF: {subject['AG SF']}\nBedrooms: {subject['Bedrooms']}  Bathrooms: {subject['Bathrooms']}")
 
-    document.add_paragraph(f"Subject Property")
-    document.add_paragraph(f"Address: {subject_info.get('Address', 'N/A')}")
-    document.add_paragraph(f"Above Grade SF: {subject_info.get('Above Grade SF', 'N/A')}")
-    document.add_paragraph(f"Bedrooms: {subject_info.get('Bedrooms', 'N/A')}")
-    document.add_paragraph(f"Bathrooms: {subject_info.get('Bathrooms', 'N/A')}")
-
-    # Sanitize numeric fields
-    for col in ['Close Price', 'Above Grade Finished Area', 'Concessions']:
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-    # Compute Net Price and PPSF
-    df["Net Price"] = df["Close Price"] - df["Concessions"]
-    df["PPSF"] = df["Net Price"] / df["Above Grade Finished Area"]
-
-    # Filter AG SF range (85% - 110%)
-    try:
-        agsf = int(subject_info.get("Above Grade SF", 0))
-        df = df[(df["Above Grade Finished Area"] >= agsf * 0.85) & 
-                (df["Above Grade Finished Area"] <= agsf * 1.10)]
-    except:
-        pass
-
-    # Full address field
-    df["Street Address"] = df["Street Number"].astype(str).str.strip() + " " +                            df["Street Dir Prefix"].fillna("").astype(str).str.strip() + " " +                            df["Street Name"].astype(str).str.strip() + " " +                            df["Street Suffix"].astype(str).str.strip()
-
-    df = apply_adjustments(df, subject_info, ADJUSTMENT_SCHEMA)
-
-    # Add comp table
-    document.add_paragraph("\nAdjusted Comparable Sales:")
-
-    table = document.add_table(rows=1, cols=5)
+    doc.add_heading("Adjusted Comps", level=2)
+    table = doc.add_table(rows=1, cols=4)
     hdr = table.rows[0].cells
     hdr[0].text = "Address"
-    hdr[1].text = "AG SF"
-    hdr[2].text = "Close Price"
-    hdr[3].text = "Concessions"
-    hdr[4].text = "Adjusted Price"
+    hdr[1].text = "Close Price"
+    hdr[2].text = "Net Price"
+    hdr[3].text = "Adjusted Price"
 
     for _, row in df.iterrows():
-        row_cells = table.add_row().cells
-        row_cells[0].text = row.get("Street Address", "N/A")
-        row_cells[1].text = str(row.get("Above Grade Finished Area", ""))
-        row_cells[2].text = str(row.get("Close Price", ""))
-        row_cells[3].text = str(row.get("Concessions", ""))
-        row_cells[4].text = str(row.get("Adj Close Price", ""))
+        cells = table.add_row().cells
+        cells[0].text = str(row.get("Street Address", row.get("Address", "N/A")))
+        cells[1].text = f"${row['Close Price']:,.0f}"
+        concessions = float(row.get("Concessions", 0))
+        net = float(row['Close Price']) - concessions
+        cells[2].text = f"${net:,.0f}"
+        cells[3].text = f"${row['Adj Price']:,.0f}" if pd.notna(row['Adj Price']) else "N/A"
 
-    # Valuation Summary
-    document.add_paragraph("\nValuation Summary")
-    avg_ppsf = df["PPSF"].mean()
-    avg_online = sum(online_estimates) / len(online_estimates) if online_estimates else 0
-    low_range = avg_online
-    high_range = df["Adj Close Price"].min(), df["Adj Close Price"].max()
+    doc.add_heading("Valuation Summary", level=2)
+    ppsfs = [float(row['Adj Price']) / float(row["AG SF"]) for _, row in df.iterrows() if pd.notna(row['Adj Price'])]
+    avg_ppsf = round(sum(ppsfs) / len(ppsfs), 2) if ppsfs else "N/A"
 
-    document.add_paragraph(f"Average PPSF: ${avg_ppsf:,.2f}")
-    document.add_paragraph(f"Online Estimate Average: ${avg_online:,.0f}")
-    document.add_paragraph(f"Recommended Range: ${low_range:,.0f} to ${high_range[1]:,.0f}")
+    adjusted_vals = [row['Adj Price'] for _, row in df.iterrows() if pd.notna(row['Adj Price'])]
+    low = min(adjusted_vals) if adjusted_vals else "N/A"
+    high = max(adjusted_vals) if adjusted_vals else "N/A"
 
-    from io import BytesIO
-    output = BytesIO()
-    document.save(output)
-    output.seek(0)
-    return output
+    doc.add_paragraph(f"Online Estimate Average: ${online_avg:,.0f}" if isinstance(online_avg, float) else f"Online Estimate Average: N/A")
+    doc.add_paragraph(f"Average PPSF (Adjusted): ${avg_ppsf}")
+    doc.add_paragraph(f"Recommended Price Range: ${online_avg:,.0f} – ${high:,.0f}" if isinstance(online_avg, float) and high != 'N/A' else "Recommended Range: N/A")
+
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer

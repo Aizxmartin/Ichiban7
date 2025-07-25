@@ -1,8 +1,21 @@
 
-def apply_adjustments(df, subject_info, schema):
-    subject_sf = float(subject_info.get("Above Grade SF", 0))
-    ag_rate = schema.get("Above Grade Finished Area", {}).get("rate", 40)
+def apply_adjustments(df, subject):
+    try:
+        subject_sf = float(subject["AG SF"])
+    except:
+        subject_sf = 0
 
-    df["AG Diff"] = df["Above Grade Finished Area"] - subject_sf
-    df["Adj Close Price"] = df["Close Price"] + df["AG Diff"] * ag_rate
+    adjusted_prices = []
+    for _, row in df.iterrows():
+        try:
+            price = float(row["Close Price"])
+            sf = float(row["AG SF"])
+            concessions = float(row.get("Concessions", 0))
+            net_price = price - concessions
+            sf_diff = sf - subject_sf
+            adj_price = net_price - (sf_diff * 40)
+            adjusted_prices.append(adj_price)
+        except Exception:
+            adjusted_prices.append(None)
+    df["Adj Price"] = adjusted_prices
     return df
