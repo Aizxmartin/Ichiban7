@@ -1,17 +1,12 @@
 
-# Ichiban Market Valuation App
+# Ichiban7 - Market Valuation App
 
-## Features
-- Upload MLS comps CSV
-- Upload PDF of subject property
-- Extract Real AVM and subject info from PDF
-- Manually input Redfin and Zillow estimates
-- Average online estimates
-- Adjust comps based on SF differences
-- Generate DOCX report with all summaries
+## Description
+A streamlined Streamlit app for real estate market valuation using schema-based adjustments.
 
-## Run Locally
-```bash
-pip install -r requirements.txt
-streamlit run main.py
-```
+## Steps
+1. Upload comps (.csv) and subject PDF.
+2. Extract AVM from PDF.
+3. Enter Zillow and Redfin estimates.
+4. Apply schema-based AG SF adjustment.
+5. Generate and download .docx report.
